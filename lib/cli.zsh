@@ -29,6 +29,7 @@ function _omz {
     'reload:Reload the current zsh session'
     'theme:Manage themes'
     'update:Update Oh My Zsh'
+    'version:Show the version'
   )
 
   if (( CURRENT == 2 )); then
@@ -67,10 +68,12 @@ function _omz {
 
         _describe 'plugin' valid_plugins ;;
       plugin::info)
-        local -aU plugins=("$ZSH"/plugins/*/{_*,*.plugin.zsh}(.N:h:t) "$ZSH_CUSTOM"/plugins/*/{_*,*.plugin.zsh}(.N:h:t))
+        local -aU plugins
+        plugins=("$ZSH"/plugins/*/{_*,*.plugin.zsh}(.N:h:t) "$ZSH_CUSTOM"/plugins/*/{_*,*.plugin.zsh}(.N:h:t))
         _describe 'plugin' plugins ;;
       theme::(set|use))
-        local -aU themes=("$ZSH"/themes/*.zsh-theme(.N:t:r) "$ZSH_CUSTOM"/**/*.zsh-theme(.N:r:gs:"$ZSH_CUSTOM"/themes/:::gs:"$ZSH_CUSTOM"/:::))
+        local -aU themes
+        themes=("$ZSH"/themes/*.zsh-theme(.N:t:r) "$ZSH_CUSTOM"/**/*.zsh-theme(.N:r:gs:"$ZSH_CUSTOM"/themes/:::gs:"$ZSH_CUSTOM"/:::))
         _describe 'theme' themes ;;
     esac
   elif (( CURRENT > 4 )); then
@@ -164,6 +167,7 @@ Available commands:
   reload              Reload the current zsh session
   theme  <command>    Manage themes
   update              Update Oh My Zsh
+  version             Show the version
 
 EOF
 }
@@ -776,4 +780,25 @@ function _omz::update {
     # Check whether to run a login shell
     [[ "$zsh" = -* || -o login ]] && exec -l "${zsh#-}" || exec "$zsh"
   fi
+}
+
+function _omz::version {
+  (
+    cd "$ZSH"
+
+    # Get the version name:
+    # 1) try tag-like version
+    # 2) try name-rev
+    # 3) try branch name
+    local version
+    version=$(command git describe --tags HEAD 2>/dev/null) \
+    || version=$(command git name-rev --no-undefined --name-only --exclude="remotes/*" HEAD 2>/dev/null) \
+    || version=$(command git symbolic-ref --quiet --short HEAD 2>/dev/null)
+
+    # Get short hash for the current HEAD
+    local commit=$(command git rev-parse --short HEAD 2>/dev/null)
+
+    # Show version and commit hash
+    printf "%s (%s)\n" "$version" "$commit"
+  )
 }
