@@ -23,12 +23,32 @@ zstyle -s ':omz:update' mode update_mode || {
 # - the automatic update is disabled
 # - the current user doesn't have write permissions nor owns the $ZSH directory
 # - is not run from a tty
-# - git is unavailable on the system
-# - $ZSH is not a git repository
 if [[ "$update_mode" = disabled ]] \
    || [[ ! -w "$ZSH" || ! -O "$ZSH" ]] \
-   || [[ ! -t 1 ]] \
-   || ! command git --version 2>&1 >/dev/null \
+   || [[ ! -t 1 && ${POWERLEVEL9K_INSTANT_PROMPT:-off} == off ]]; then
+  unset update_mode
+  return
+fi
+
+# Cancel update if it's not time to check yet. This runs before the git checks
+# below because those fork on every startup. Skipped when a background update
+# left a result that still needs to be reported (EXIT_STATUS is set).
+() {
+  local LAST_EPOCH EXIT_STATUS ERROR epoch_target
+  zmodload zsh/datetime
+  source "${ZSH_CACHE_DIR}/.zsh-update" 2>/dev/null || return 1
+  [[ -n "$LAST_EPOCH" && -z "$EXIT_STATUS" ]] || return 1
+  zstyle -s ':omz:update' frequency epoch_target || epoch_target=${UPDATE_ZSH_DAYS:-13}
+  (( ( EPOCHSECONDS / 60 / 60 / 24 - LAST_EPOCH ) < epoch_target ))
+} && {
+  unset update_mode
+  return
+}
+
+# Cancel update if:
+# - git is unavailable on the system
+# - $ZSH is not a git repository
+if ! command git --version >/dev/null 2>&1 \
    || (builtin cd -q "$ZSH"; ! command git rev-parse --is-inside-work-tree &>/dev/null); then
   unset update_mode
   return
@@ -111,6 +131,11 @@ EOD
 function update_ohmyzsh() {
   local verbose_mode
   zstyle -s ':omz:update' verbose verbose_mode || verbose_mode=default
+
+  # Force verbose mode to silent if p10k instant prompt is enabled
+  if [[ ${POWERLEVEL9K_INSTANT_PROMPT:-off} != "off" ]]; then
+    verbose_mode=silent
+  fi
 
   if [[ "$update_mode" != background-alpha ]] \
     && LANG= ZSH="$ZSH" zsh -f "$ZSH/tools/upgrade.sh" -i -v $verbose_mode; then
@@ -227,7 +252,7 @@ function handle_update() {
 
     # Ask for confirmation and only update on 'y', 'Y' or Enter
     # Otherwise just show a reminder for how to update
-    echo -n "[oh-my-zsh] Would you like to update? [Y/n] "
+    printf "[oh-my-zsh] Would you like to update? [Y/n] "
     read -r -k 1 option
     [[ "$option" = $'\n' ]] || echo
     case "$option" in
@@ -275,7 +300,7 @@ case "$update_mode" in
           return 0
         elif [[ "$EXIT_STATUS" -ne 0 ]]; then
           print -P "\n%F{red}[oh-my-zsh] There was an error updating:%f"
-          printf "\n${fg[yellow]}%s${reset_color}" "$ERROR"
+          printf "\n${fg[yellow]}%s${reset_color}" "${ERROR}"
           return 0
         fi
       } always {
